@@ -105,25 +105,46 @@ serve(async (req) => {
       console.log(`Searching for point: "${point}"`);
       const embedding = await embedText(point);
 
-      const { data: chunks, error: searchError } = await supabase
-        .from("bible_chunks")
-        .select("reference, text, chunk_type, embedding")
-        .in("chunk_type", chunkTypes)
-        .limit(limit * 2);
-
-      if (searchError) throw searchError;
-
-      const scoredChunks = (chunks || []).map((chunk: any) => {
-        let similarity = 0;
-        if (chunk.embedding && chunk.embedding.length === embedding.length) {
-          for (let i = 0; i < embedding.length; i++) {
-            similarity += chunk.embedding[i] * embedding[i];
-          }
-        }
-        return { ...chunk, similarity };
+      // Use RPC for proper vector similarity search
+      const { data: chunks, error: searchError } = await supabase.rpc("match_bible_chunks", {
+        query_embedding: embedding,
+        match_count: limit * 2,
+        filter_types: chunkTypes,
       });
 
-      scoredChunks.sort((a: any, b: any) => b.similarity - a.similarity);
+      if (searchError) {
+        console.error("RPC error, falling back to manual search:", searchError.message);
+        // Fallback: fetch all and compute manually
+        const { data: fallbackChunks } = await supabase
+          .from("bible_chunks")
+          .select("reference, text, chunk_type, embedding")
+          .in("chunk_type", chunkTypes)
+          .limit(200);
+
+        const scoredChunks = (fallbackChunks || []).map((chunk: any) => {
+          let similarity = 0;
+          if (chunk.embedding && Array.isArray(chunk.embedding) && chunk.embedding.length === embedding.length) {
+            for (let i = 0; i < embedding.length; i++) {
+              similarity += (chunk.embedding[i] || 0) * (embedding[i] || 0);
+            }
+          }
+          return { ...chunk, similarity };
+        });
+
+        scoredChunks.sort((a: any, b: any) => b.similarity - a.similarity);
+        chunks = scoredChunks;
+      }
+
+      const scoredChunks = (chunks || []).map((chunk: any) => {
+        return {
+          reference: chunk.reference,
+          text: chunk.text,
+          similarity: chunk.similarity || 0,
+          chunk_type: chunk.chunk_type,
+        };
+      });
+
+      scoredChunks.sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0));
 
       for (const chunk of scoredChunks.slice(0, limit)) {
         if (!seenRefs.has(chunk.reference)) {
@@ -131,7 +152,7 @@ serve(async (req) => {
           allResults.push({
             reference: chunk.reference,
             text: chunk.text,
-            similarity: chunk.similarity,
+            similarity: chunk.similarity || 0,
             matched_point: point,
             chunk_type: chunk.chunk_type,
           });

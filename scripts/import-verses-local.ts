@@ -1,11 +1,36 @@
 // scripts/import-verses-local.ts
-// Run locally: npx deno run --allow-net --allow-read scripts/import-verses-local.ts
+// Run locally: npx deno run --allow-net --allow-read --allow-env scripts/import-verses-local.ts
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// Load .env file manually
+function loadEnv() {
+  try {
+    const envContent = Deno.readTextFileSync(".env");
+    for (const line of envContent.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const equalsIdx = trimmed.indexOf("=");
+      if (equalsIdx > 0) {
+        const key = trimmed.substring(0, equalsIdx).trim();
+        const value = trimmed.substring(equalsIdx + 1).trim();
+        Deno.env.set(key, value);
+      }
+    }
+  } catch (e) {
+    // .env file not found, assume env vars are already set
+  }
+}
+
+// Load env before using
+loadEnv();
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VERSE_FILES_PATH = Deno.env.get("VERSE_FILES_PATH") || ".";
+
+console.log("SUPABASE_URL:", SUPABASE_URL ? "set" : "MISSING");
+console.log("VERSE_FILES_PATH:", VERSE_FILES_PATH);
 
 const BOOK_CODE_MAP: Record<string, string> = {
   GEN: "Genesis", EXO: "Exodus", LEV: "Leviticus", NUM: "Numbers",
@@ -61,12 +86,17 @@ function getTestament(name: string): string {
   return getBookOrder(name) <= 39 ? "old" : "new";
 }
 
-function parseVerseLine(line: string): { verseNum: number; text: string } | null {
+function parseVerseLine(line: string, index: number): { verseNum: number; text: string } | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
+  // Check if line starts with a number (verse number)
   const match = trimmed.match(/^(\d+)\s+(.+)$/);
-  if (!match) return null;
-  return { verseNum: parseInt(match[1], 10), text: match[2].trim() };
+  if (match) {
+    return { verseNum: parseInt(match[1], 10), text: match[2].trim() };
+  }
+  // No explicit verse number - assign based on position (index starts at 0 for first verse line)
+  // File format: line 1 = book title, line 2 = chapter header, line 3+ = verses
+  return { verseNum: index + 1, text: trimmed };
 }
 
 async function main() {
@@ -119,7 +149,7 @@ async function main() {
     const lines = content.split("\n");
 
     for (let i = 2; i < lines.length; i++) {
-      const parsed = parseVerseLine(lines[i]);
+      const parsed = parseVerseLine(lines[i], i - 2); // verse index starts at 0 for first verse
       if (!parsed) continue;
 
       const reference = `${bookName} ${chapter}:${parsed.verseNum}`;
