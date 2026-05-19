@@ -8,6 +8,7 @@ export function Navbar() {
   const navigate = useNavigate()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -17,7 +18,13 @@ export function Navbar() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
-    return () => subscription.unsubscribe()
+
+    const handleScroll = () => setScrolled(window.scrollY > 10)
+    window.addEventListener('scroll', handleScroll)
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('scroll', handleScroll)
+    }
   }, [])
 
   const handleLogout = async () => {
@@ -26,29 +33,48 @@ export function Navbar() {
   }
 
   return (
-    <nav className="border-b px-4 py-3 flex items-center justify-between">
-      <Link to="/" className="text-xl font-bold">sermonize.ai</Link>
-      <div className="flex items-center gap-4">
+    <nav
+      className={`sticky top-0 z-50 px-6 py-4 flex items-center justify-between transition-all duration-300 ${
+        scrolled
+          ? 'bg-background/80 backdrop-blur-md shadow-soft border-b border-border'
+          : 'bg-transparent border-b border-transparent'
+      }`}
+    >
+      <Link
+        to="/"
+        className="text-2xl font-bold tracking-tight"
+        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+      >
+        sermonize<span style={{ color: 'var(--accent)' }}>.</span>
+      </Link>
+      <div className="flex items-center gap-5">
         {loading ? null : user ? (
           <>
             <Link to="/dashboard">
-              <Button variant="ghost">Dashboard</Button>
+              <Button variant="ghost" className="text-sm font-medium">
+                Dashboard
+              </Button>
             </Link>
-            <div className="flex items-center gap-2">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-9 w-9 border-2 border-border">
+                <AvatarFallback className="text-sm font-semibold bg-secondary">
                   {user.email?.[0]?.toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm text-muted-foreground hidden sm:inline">
-                {user.email}
-              </span>
             </div>
-            <Button variant="outline" onClick={handleLogout}>Logout</Button>
+            <Button
+              variant="outline"
+              onClick={handleLogout}
+              className="text-sm font-medium border-2 hover:bg-secondary"
+            >
+              Sign Out
+            </Button>
           </>
         ) : (
           <Link to="/auth">
-            <Button>Sign In</Button>
+            <Button className="px-6 font-medium shadow-md hover:shadow-lg hover:-translate-y-px">
+              Begin
+            </Button>
           </Link>
         )}
       </div>

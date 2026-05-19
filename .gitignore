@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+sermonize-frontend/.env.local
+sermonize-frontend/.env.production
 
 # OS files
 .DS_Store
@@ -21,6 +23,7 @@ npm-debug.log*
 # Editor
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SearchResults } from '@/components/SearchResults'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Save, Search } from 'lucide-react'
 
 interface SearchChunk {
   reference: string
@@ -25,11 +25,18 @@ export function SermonPage() {
   const [searching, setSearching] = useState(false)
   const [points, setPoints] = useState<string[]>([])
   const [searchResults, setSearchResults] = useState<SearchChunk[]>([])
+  const [hasChanges, setHasChanges] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     loadSermon()
   }, [id])
+
+  useEffect(() => {
+    if (content !== '' || title !== '') {
+      setHasChanges(true)
+    }
+  }, [content, title])
 
   const loadSermon = async () => {
     if (!id) return
@@ -45,6 +52,7 @@ export function SermonPage() {
       setContent(data.content)
     }
     setLoading(false)
+    setHasChanges(false)
   }
 
   const saveSermon = async () => {
@@ -61,6 +69,7 @@ export function SermonPage() {
       .eq('id', id)
 
     setSaving(false)
+    setHasChanges(false)
   }
 
   const findVerses = async () => {
@@ -68,8 +77,8 @@ export function SermonPage() {
     setSearching(true)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) return
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search`,
@@ -77,7 +86,7 @@ export function SermonPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
           },
           body: JSON.stringify({
             sermon_text: content,
@@ -114,49 +123,83 @@ export function SermonPage() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>
+    return (
+      <div className="flex items-center justify-center h-[80vh]">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
   }
 
   return (
-    <div className="container py-8 px-4 h-[calc(100vh-64px)]">
-      <div className="flex gap-4 h-full">
-        <div className="flex-1 flex flex-col gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Sermon Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter sermon title..."
-            />
+    <div className="min-h-[90vh] px-6 py-10">
+      <div className="max-w-7xl mx-auto flex gap-6 h-full">
+        {/* Left: Editor */}
+        <div className="flex-1 flex flex-col gap-5 animate-slide-in">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 pr-4">
+              <Label htmlFor="title" className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
+                Sermon Title
+              </Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Enter your sermon title..."
+                className="text-xl font-semibold border-0 bg-transparent px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              />
+            </div>
           </div>
 
-          <div className="flex-1">
-            <Label htmlFor="content" className="mb-2 block">Sermon Content</Label>
+          <div className="flex-1 flex flex-col">
+            <Label htmlFor="content" className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
+              Sermon Content
+            </Label>
             <Textarea
               ref={textareaRef}
               id="content"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Write your sermon here..."
-              className="h-full min-h-[400px]"
+              placeholder="Begin writing your sermon here. Write freely — we'll help you find the perfect verses to support your message..."
+              className="flex-1 min-h-[500px] text-base leading-relaxed resize-none bg-card rounded-lg border-border/50 focus:border-accent transition-colors placeholder:text-muted-foreground/40"
             />
           </div>
 
-          <div className="flex gap-2">
-            <Button onClick={findVerses} disabled={searching || !content.trim()}>
-              {searching ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          <div className="flex items-center gap-4 pt-2">
+            <Button
+              onClick={findVerses}
+              disabled={searching || !content.trim()}
+              className="gap-2 shadow-md hover:shadow-lg hover:-translate-y-px"
+            >
+              {searching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
               {searching ? 'Searching...' : 'Find Verses'}
             </Button>
-            <Button onClick={saveSermon} disabled={saving} variant="secondary">
-              {saving ? 'Saving...' : 'Save Draft'}
+            <Button
+              onClick={saveSermon}
+              disabled={saving || !hasChanges}
+              variant="secondary"
+              className="gap-2"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {saving ? 'Saving...' : hasChanges ? 'Save Draft' : 'Saved'}
             </Button>
           </div>
         </div>
 
-        <div className="w-96 border rounded-lg overflow-hidden flex flex-col">
-          <div className="p-4 border-b bg-muted/50">
-            <h2 className="font-semibold">Matching Verses</h2>
+        {/* Right: Verse Suggestions Panel */}
+        <div className="w-96 flex-shrink-0 bg-card rounded-lg border border-border overflow-hidden flex flex-col animate-slide-in" style={{ animationDelay: '0.1s', animationFillMode: 'forwards' }}>
+          <div className="px-5 py-4 border-b border-border bg-secondary/30">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Matching Verses
+            </h2>
           </div>
           <div className="flex-1 overflow-hidden">
             <SearchResults
