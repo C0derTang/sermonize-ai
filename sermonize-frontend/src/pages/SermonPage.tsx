@@ -25,6 +25,7 @@ export function SermonPage() {
   const [searching, setSearching] = useState(false)
   const [points, setPoints] = useState<string[]>([])
   const [searchResults, setSearchResults] = useState<SearchChunk[]>([])
+  const [searchError, setSearchError] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -75,6 +76,7 @@ export function SermonPage() {
   const findVerses = async () => {
     if (!content.trim()) return
     setSearching(true)
+    setSearchError('')
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -95,13 +97,19 @@ export function SermonPage() {
         }
       )
 
+      console.log('Response status:', response.status)
       const data = await response.json()
+      console.log('Search response:', data)
       if (data.points && data.chunks) {
         setPoints(data.points)
         setSearchResults(data.chunks)
+      } else if (data.error) {
+        setSearchError(`API error: ${data.error}`)
       }
     } catch (err) {
       console.error('Search error:', err)
+      const message = err instanceof Error ? err.message : 'Search failed'
+      setSearchError(`${message}. URL: ${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search`)
     } finally {
       setSearching(false)
     }
@@ -164,6 +172,10 @@ export function SermonPage() {
               className="flex-1 min-h-[500px] text-base leading-relaxed resize-none bg-card rounded-lg border-border/50 focus:border-accent transition-colors placeholder:text-muted-foreground/40"
             />
           </div>
+
+          {searchError && (
+            <p className="text-sm text-destructive mt-2 px-4">{searchError}</p>
+          )}
 
           <div className="flex items-center gap-4 pt-2">
             <Button

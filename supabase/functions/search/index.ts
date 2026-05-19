@@ -20,7 +20,7 @@ async function extractPoints(sermonText: string): Promise<string[]> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
@@ -38,27 +38,60 @@ Example output: ["God's creation is purposeful and good", "The Spirit of God bri
     }),
   });
 
-  if (!response.ok) throw new Error(`OpenAI API error: ${response.statusText}`);
+  if (!response.ok) throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
   const data = await response.json();
-  const content = data.choices[0]?.message?.content || "[]";
+
+  // Debug: log the full response
+  console.log("OpenAI extractPoints response:", JSON.stringify(data));
+
+  // Navigate the response - handle different possible structures
+  let content: string = "";
+  if (data.choices && data.choices.length > 0) {
+    content = data.choices[0].message?.content ?? "";
+  } else if (data.output && data.output.content) {
+    content = data.output.content;
+  } else if (data.message) {
+    content = data.message;
+  }
+
+  content = content.trim();
+
+  // If content is empty or not a valid string, return empty array
+  if (!content) {
+    console.error("Empty content from OpenAI API. Full response:", JSON.stringify(data));
+    return [];
+  }
+
+  try {
+    // Handle both string content and object content (o1-mini format)
+    const rawContent = data.choices?.[0]?.message?.content ?? data.choices?.[0]?.content ?? "";
+    content = typeof rawContent === "string" ? rawContent.trim() : JSON.stringify(rawContent);
+  } catch {
+    content = "";
+  }
+
+  // If content is empty, return empty array
+  if (!content) {
+    console.error("Empty content from OpenAI API. Full response:", JSON.stringify(data));
+    return [];
+  }
 
   try {
     const points = JSON.parse(content);
-    if (Array.isArray(points)) return points.slice(0, 5);
+    if (Array.isArray(points) && points.length > 0) return points.slice(0, 5);
   } catch {
     const match = content.match(/\[[\s\S]*?\]/);
     if (match) {
       try {
         const points = JSON.parse(match[0]);
-        if (Array.isArray(points)) return points.slice(0, 5);
+        if (Array.isArray(points) && points.length > 0) return points.slice(0, 5);
       } catch {}
     }
   }
 
-  return content.split(/[\n\r]+/)
-    .map((s: string) => s.replace(/^[-*]\s*/, "").trim())
-    .filter((s: string) => s.length > 10)
-    .slice(0, 5);
+  const lines = content.split(/[\n\r]+/).map((s: string) => s.replace(/^[-*]\s*/, "").trim()).filter((s: string) => s.length > 10);
+  console.log("Extracted lines:", lines);
+  return lines.slice(0, 5);
 }
 
 async function embedText(text: string): Promise<number[]> {
@@ -75,7 +108,17 @@ async function embedText(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -87,7 +130,7 @@ serve(async (req) => {
     const chunkTypes = body.chunk_types || ["single", "verse_group"];
 
     if (!sermon_text) {
-      return new Response(JSON.stringify({ error: "sermon_text or query is required" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "sermon_text or query is required" }), { status: 400, headers: corsHeaders });
     }
 
     console.log("Extracting theological points from sermon...");
@@ -95,7 +138,7 @@ serve(async (req) => {
     console.log(`Extracted ${points.length} points:`, points);
 
     if (points.length === 0) {
-      return new Response(JSON.stringify({ error: "Could not extract theological points" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Could not extract theological points" }), { status: 400, headers: corsHeaders });
     }
 
     const allResults: SearchResult[] = [];
@@ -165,10 +208,10 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ points, chunks: finalResults }),
-      { headers: { "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Search error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
   }
 });
