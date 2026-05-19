@@ -1,6 +1,5 @@
-{
-  "buildCommand": "npm install && npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite"
-  
-}
+  {
+    "buildCommand": "cd sermonize-frontend && npm install && npm run build",
+    "outputDirectory": "sermonize-frontend/dist",
+    "framework": "vite"
+  }
